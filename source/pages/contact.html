@@ -1,0 +1,74 @@
+title: Contact | Insight360
+description: Start your growth audit or book a consultation with Insight360.
+active: contact.html
+cta: no
+---
+<section class="page-hero" style="padding-bottom:clamp(32px,4vw,56px)">
+  <div class="wrap grid">
+    <span class="eyebrow">Contact</span>
+    <h1 class="display">Start your <span class="tone">growth audit.</span></h1>
+    <p class="lead">Tell us about the business and what is slowing it down. We reply by email to arrange a first conversation.</p>
+  </div>
+</section>
+
+<section class="section" style="padding-top:0">
+  <div class="wrap grid form-layout">
+    <form class="form" name="growth-audit" method="POST" data-netlify="true" netlify-honeypot="company_website" data-form data-success="Thanks, {name}. We have your details and will reply by email to arrange a first conversation." novalidate>
+      <input type="hidden" name="form-name" value="growth-audit">
+      <input type="hidden" name="growth_brief" id="readiness" value="">
+      <p class="hidden-field"><label>Leave this empty <input name="company_website"></label></p>
+
+      <div class="attached" aria-live="polite">
+        <span class="label" style="color:var(--mint)">Growth brief attached</span>
+        <div class="row"></div>
+        <button class="btn btn--sm" type="button" style="justify-self:start">Remove</button>
+      </div>
+
+      <div class="field-row">
+        <div class="field" data-required><label for="name">Full name</label><input type="text" id="name" name="name" autocomplete="name"><span class="error">Enter your name</span></div>
+        <div class="field" data-required><label for="email">Work email</label><input type="email" id="email" name="email" autocomplete="email"><span class="error">Enter an email address, like name@company.com</span></div>
+      </div>
+      <div class="field-row">
+        <div class="field" data-required><label for="company">Company</label><input type="text" id="company" name="company" autocomplete="organization"><span class="error">Enter your company name</span></div>
+        <div class="field"><label for="phone">Phone <span class="hint">optional</span></label><input type="tel" id="phone" name="phone" autocomplete="tel" placeholder="+234"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="role">Your role <span class="hint">optional</span></label><input type="text" id="role" name="role" autocomplete="organization-title"></div>
+        <div class="field"><label for="size">Team size <span class="hint">optional</span></label><select id="size" name="team_size"><option value="">Choose one</option><option>1 to 10</option><option>11 to 50</option><option>51 to 200</option><option>More than 200</option></select></div>
+      </div>
+      <div class="field" data-required>
+        <label for="need">What would you like to book?</label>
+        <select id="need" name="interest"><option value="">Choose one</option><option value="Growth audit">Growth audit</option><option value="Consultation">Consultation</option><option value="Something else">Something else</option></select>
+        <span class="error">Choose what you would like to book</span>
+      </div>
+      <fieldset class="field">
+        <legend>Where is the business getting stuck? <span class="hint">choose any</span></legend>
+        <div class="checks">
+          <div class="checkbox"><input type="checkbox" id="c-s" name="areas" value="Structure"><label for="c-s">Processes and roles</label></div>
+          <div class="checkbox"><input type="checkbox" id="c-t" name="areas" value="Tech"><label for="c-t">Tools and systems</label></div>
+          <div class="checkbox"><input type="checkbox" id="c-d" name="areas" value="Data"><label for="c-d">Numbers and reporting</label></div>
+          <div class="checkbox"><input type="checkbox" id="c-v" name="areas" value="Visibility"><label for="c-v">Brand and customers</label></div>
+        </div>
+      </fieldset>
+      <div class="field"><label for="message">Anything else we should know? <span class="hint">optional</span></label><textarea id="message" name="message" rows="5"></textarea></div>
+      <div style="display:grid;gap:14px;justify-items:start">
+        <button class="btn btn--solid" type="submit"><span class="dot"></span>Send request</button>
+        <p class="form-note">We use these details only to reply to your request.</p>
+      </div>
+      <p class="form-status" tabindex="-1" role="status"></p>
+    </form>
+
+    <aside class="form-aside" aria-label="Other ways to reach us">
+      <div class="aside-block"><span class="label">Email</span><a href="mailto:hello@insight360.com">hello@insight360.com</a></div>
+      <div class="aside-block"><span class="label">Phone</span><a href="tel:+2348118990300">+234 811 899 0300</a></div>
+      <div class="aside-block"><span class="label">What happens next</span>
+        <ol>
+          <li>We read your answers and reply by email to arrange a call.</li>
+          <li>On the call we look at where the business stands and what you want to change.</li>
+          <li>If a growth audit is the right next step, we agree its scope with you.</li>
+        </ol>
+      </div>
+      <div class="aside-block"><span class="label">Not sure where to start?</span><a class="link" href="index.html#scan" style="justify-self:start">Run the growth scan</a></div>
+    </aside>
+  </div>
+</section>

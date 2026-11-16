@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
+</head><body>
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
+
+const params = new URLSearchParams(location.search);
+const W = +(params.get('w') || 1920), H = +(params.get('h') || 1080);
+const RED = new THREE.Color('#ff3b2f');
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+renderer.setSize(W, H);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#050505');
+scene.fog = new THREE.Fog('#050505', 7.5, 15);
+const pmrem = new THREE.PMREMGenerator(renderer);
+function studioEnv() {
+  const s = new THREE.Scene();
+  s.add(new THREE.Mesh(new THREE.BoxGeometry(40, 20, 40), new THREE.MeshBasicMaterial({ color: 0x060606, side: THREE.BackSide })));
+  const panel = (w, h, k, pos, color = 0xffffff) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(k), side: THREE.DoubleSide }));
+    m.position.set(...pos); m.lookAt(0, 1, 0); s.add(m);
+  };
+  panel(10, 3.5, 1.0, [0, 9, 0.5]);
+  panel(1.2, 6, 3.6, [-6, 2.2, 3.0]);
+  panel(1.2, 6, 4.2, [6, 2.2, -1.0]);
+  panel(14, 3, 0.7, [0, 3, -12], 0xdfe8ff);
+  panel(7, 2.2, 0.9, [3, 1.2, 10]);
+  return pmrem.fromScene(s, 0).texture;
+}
+scene.environment = studioEnv();
+scene.environmentIntensity = 0.9;
+
+const camera = new THREE.PerspectiveCamera(30, W / H, 0.1, 100);
+
+/* Backdrop: soft radial falloff behind the object */
+function radialTex(inner, outer) {
+  const c = document.createElement('canvas'); c.width = c.height = 512;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(256, 256, 0, 256, 256, 256);
+  gr.addColorStop(0, inner); gr.addColorStop(1, outer);
+  g.fillStyle = gr; g.fillRect(0, 0, 512, 512);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const mirror = new Reflector(new THREE.PlaneGeometry(60, 60), { textureWidth: W / 2, textureHeight: H / 2, color: '#3a3a3c' });
+mirror.rotation.x = -Math.PI / 2; mirror.position.y = -0.002; scene.add(mirror);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.MeshStandardMaterial({ color: '#060606', roughness: 0.7, metalness: 0.0, transparent: true, opacity: 0.86 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+
+/* Lights */
+RectAreaLightUniformsLib.init();
+const key = new THREE.RectAreaLight('#fff4e8', 3.6, 7, 3.5); key.position.set(-3.8, 6.2, 3.0); key.lookAt(0, 0.6, 0); scene.add(key);
+const top = new THREE.RectAreaLight('#ffffff', 0.7, 3, 3); top.position.set(0.4, 7, 0.6); top.lookAt(0, 0, 0); scene.add(top);
+const rim = new THREE.RectAreaLight('#e6eeff', 16, 6, 0.9); rim.position.set(3.2, 2.2, -4.6); rim.lookAt(0, 0.7, 0); scene.add(rim);
+const strip = new THREE.RectAreaLight('#ffffff', 7, 0.35, 5); strip.position.set(5.2, 1.4, 2.0); strip.lookAt(0, 0.8, 0); scene.add(strip);
+const fill = new THREE.RectAreaLight('#f2f4f7', 3.2, 8, 2.5); fill.position.set(3.0, 1.0, 6.5); fill.lookAt(0, 0.6, 0); scene.add(fill);
+const sun = new THREE.DirectionalLight('#ffffff', 0.6); sun.position.set(-2.5, 7, 3); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048); sun.shadow.camera.left = -4; sun.shadow.camera.right = 4; sun.shadow.camera.top = 4; sun.shadow.camera.bottom = -4; sun.shadow.radius = 6; sun.shadow.bias = -0.0004;
+scene.add(sun);
+const sweep = new THREE.RectAreaLight('#ffffff', 0, 0.5, 6); scene.add(sweep);
+const redGlow = new THREE.PointLight(RED, 0, 3.2, 2); redGlow.position.set(0, 1.6, 0); scene.add(redGlow);
+
+/* Materials */
+function noiseTex(seed, size = 256) {
+  const c = document.createElement('canvas'); c.width = c.height = size; const g = c.getContext('2d');
+  const img = g.createImageData(size, size); let s = seed;
+  for (let i = 0; i < size * size; i++) { s = (s * 16807) % 2147483647; const v = 150 + (s % 60); img.data[i*4] = img.data[i*4+1] = img.data[i*4+2] = v; img.data[i*4+3] = 255; }
+  g.putImageData(img, 0, 0);
+  // brushed streaks
+  g.globalAlpha = 0.08; for (let y = 0; y < size; y += 2) { g.fillStyle = (y % 6) ? '#fff' : '#000'; g.fillRect(0, y, size, 1); }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 3); return t;
+}
+const rough = noiseTex(7);
+const anod = new THREE.MeshPhysicalMaterial({ color: '#1d1e21', metalness: 0.9, roughness: 0.5, roughnessMap: rough, clearcoat: 0.12, clearcoatRoughness: 0.4 });
+const anodLight = new THREE.MeshPhysicalMaterial({ color: '#26272b', metalness: 0.9, roughness: 0.42, roughnessMap: rough, clearcoat: 0.15, clearcoatRoughness: 0.35 });
+const steel = new THREE.MeshPhysicalMaterial({ color: '#8d9095', metalness: 1.0, roughness: 0.22 });
+const glass = new THREE.MeshPhysicalMaterial({ color: '#9aa6ab', metalness: 0, roughness: 0.08, transmission: 1, thickness: 0.3, ior: 1.5, attenuationColor: new THREE.Color('#3c4447'), attenuationDistance: 0.9, specularIntensity: 1, clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 1.4 });
+const etched = new THREE.MeshStandardMaterial({ color: '#9ca4a8', roughness: 0.9, metalness: 0, emissive: '#ffffff', emissiveIntensity: 0.05 });
+const redMat = () => new THREE.MeshBasicMaterial({ color: RED, transparent: true, opacity: 0, toneMapped: false });
+const dotMetal = new THREE.MeshPhysicalMaterial({ color: '#9a9ea3', metalness: 0.55, roughness: 0.45, emissive: '#2a2c2f', emissiveIntensity: 0.6 });
+
+/* Trace texture for the Tech layer */
+function traceTex() {
+  const s = 1024, c = document.createElement('canvas'); c.width = c.height = s; const g = c.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, s, s);
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  g.lineCap = 'square';
+  for (let i = 0; i < 70; i++) {
+    let x = 80 + Math.floor(rnd() * 15) * 58, y = 80 + Math.floor(rnd() * 15) * 58;
+    g.strokeStyle = 'rgba(200,205,210,0.55)'; g.lineWidth = 3; g.beginPath(); g.moveTo(x, y);
+    for (let k = 0; k < 4; k++) { if (rnd() > 0.5) x += (rnd() > 0.5 ? 1 : -1) * 58 * (1 + Math.floor(rnd() * 3)); else y += (rnd() > 0.5 ? 1 : -1) * 58 * (1 + Math.floor(rnd() * 3)); x = Math.max(60, Math.min(s - 60, x)); y = Math.max(60, Math.min(s - 60, y)); g.lineTo(x, y); }
+    g.stroke(); g.fillStyle = 'rgba(220,224,228,0.7)'; g.beginPath(); g.arc(x, y, 7, 0, Math.PI * 2); g.fill();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+
+/* Build the unit: four layers bottom to top */
+const unit = new THREE.Group(); scene.add(unit);
+const LAYERS = [];
+function addLayer(name, h, w, mat) {
+  const g = new THREE.Group(); g.name = name;
+  const m = new THREE.Mesh(new RoundedBoxGeometry(w, h, w, 5, Math.min(0.035, h / 3)), mat);
+  m.castShadow = true; m.receiveShadow = true; g.add(m); g.userData.h = h; g.userData.w = w; g.userData.body = m;
+  unit.add(g); LAYERS.push(g); return g;
+}
+const GAP = 0.05;
+const L0 = addLayer('structure', 0.42, 2.1, anod);
+// Structure: milled channels on the sides
+for (let i = -2; i <= 2; i++) {
+  const ch = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.24, 2.106), new THREE.MeshPhysicalMaterial({ color: '#0b0b0c', metalness: 0.6, roughness: 0.5 }));
+  ch.position.set(i * 0.34, -0.02, 0); L0.add(ch);
+}
+const L1 = addLayer('tech', 0.16, 2.0, anodLight);
+const tt = traceTex();
+const traces = new THREE.Mesh(new THREE.PlaneGeometry(1.86, 1.86), new THREE.MeshPhysicalMaterial({ color: '#111', metalness: 0.8, roughness: 0.4, emissive: '#ffffff', emissiveMap: tt, emissiveIntensity: 0.16, map: tt }));
+traces.rotation.x = -Math.PI / 2; traces.position.y = 0.081; L1.add(traces);
+const chip = new THREE.Mesh(new RoundedBoxGeometry(0.42, 0.06, 0.42, 3, 0.012), steel); chip.position.set(0.32, 0.11, -0.28); chip.castShadow = true; L1.add(chip);
+const L2 = addLayer('data', 0.26, 1.96, glass);
+// Data: etched bars inside the glass
+const barH = [0.35, 0.5, 0.42, 0.62, 0.55, 0.78, 0.7, 0.9];
+barH.forEach((v, i) => {
+  const b = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.004, v * 1.3), etched);
+  b.position.set(-0.75 + i * 0.21, -0.02, 0.75 - v * 0.65); b.scale.y = 2.5; L2.add(b);
+  if (i === 7) { b.material = redMat(); b.userData.signal = true; L2.userData.redBar = b; }
+});
+const L3 = addLayer('visibility', 0.18, 2.1, anod);
+// Visibility: the dot mark milled into the top face
+const markR = 0.66, innerR = 0.362;
+const dots = { outer: [], inner: [], core: null };
+for (let i = 0; i < 12; i++) {
+  const a = (-90 + i * 30) * Math.PI / 180;
+  const d = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.02, 32), dotMetal);
+  d.position.set(Math.cos(a) * markR, 0.085, Math.sin(a) * markR); L3.add(d); dots.outer.push(d);
+}
+for (let i = 0; i < 8; i++) {
+  const a = (-67.5 + i * 45) * Math.PI / 180;
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.02, 32), dotMetal);
+  base.position.set(Math.cos(a) * innerR, 0.085, Math.sin(a) * innerR); L3.add(base);
+  const lit = new THREE.Mesh(new THREE.CylinderGeometry(0.056, 0.056, 0.022, 32), redMat());
+  lit.position.copy(base.position); L3.add(lit); dots.inner.push(lit);
+}
+{ const base = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.02, 32), dotMetal); base.position.set(0, 0.085, 0); L3.add(base);
+  dots.core = new THREE.Mesh(new THREE.CylinderGeometry(0.071, 0.071, 0.022, 32), redMat()); dots.core.position.set(0, 0.086, 0); L3.add(dots.core); }
+
+// Final resting heights
+let y = 0; const REST = [];
+LAYERS.forEach((l) => { const h = l.userData.h; REST.push(y + h / 2); y += h + GAP; });
+const STACK_H = y - GAP;
+
+/* Signal lines in the gaps */
+const signalLines = [];
+for (let i = 0; i < 3; i++) {
+  const gy = REST[i] + LAYERS[i].userData.h / 2 + GAP / 2;
+  const w = 1.9, grp = new THREE.Group(); const mat = redMat();
+  [[0, w / 2, w, 0.012], [0, -w / 2, w, 0.012], [w / 2, 0, 0.012, w], [-w / 2, 0, 0.012, w]].forEach(([x, z, sx, sz]) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(sx, 0.01, sz), mat); m.position.set(x, 0, z); grp.add(m);
+  });
+  grp.position.y = gy; unit.add(grp); signalLines.push(mat);
+}
+
+/* Corner posts and fasteners */
+const posts = [];
+[[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([sx, sz]) => {
+  const p = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, STACK_H, 24), steel);
+  p.position.set(sx * 0.93, STACK_H / 2, sz * 0.93); p.castShadow = true; unit.add(p); posts.push(p);
+});
+const fasteners = [];
+[[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([sx, sz], i) => {
+  const f = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.025, 6), steel);
+  f.userData.rest = new THREE.Vector3(sx * 0.93, STACK_H + 0.012, sz * 0.93); f.castShadow = true; unit.add(f); fasteners.push(f);
+});
+
+/* Scatter: deterministic starting poses */
+let rs = 42; const r = () => (rs = (rs * 16807) % 2147483647) / 2147483647;
+const scatter = LAYERS.map((l, i) => ({
+  pos: new THREE.Vector3([-1.5, 1.7, -1.2, 1.3][i] + (r() - 0.5) * 0.4, [0.9, 1.7, 2.7, 3.6][i] + r() * 0.3, [0.9, -0.6, -1.6, 0.4][i] + (r() - 0.5) * 0.4),
+  rot: new THREE.Euler((r() - 0.5) * 0.9, (r() - 0.5) * 1.6, (r() - 0.5) * 0.8),
+}));
+const fScatter = fasteners.map(() => ({ pos: new THREE.Vector3((r() - 0.5) * 4, 1.2 + r() * 2.6, (r() - 0.5) * 3.5), rot: new THREE.Euler(r() * 3, r() * 3, r() * 3) }));
+// small loose parts (offcuts) that drift away as the system forms
+const offcuts = [];
+for (let i = 0; i < 0; i++) {
+  const s = 0.05 + r() * 0.1;
+  const m = new THREE.Mesh(new RoundedBoxGeometry(s * (1 + r()), s * 0.5, s, 2, s * 0.08), anod);
+  m.userData.p = new THREE.Vector3((r() - 0.5) * 4.5, 0.4 + r() * 3.4, (r() - 0.5) * 4);
+  m.userData.v = new THREE.Vector3((r() - 0.5), (r() - 0.2) * 0.6, (r() - 0.5)).normalize();
+  m.userData.rot = new THREE.Euler(r() * 6, r() * 6, r() * 6);
+  m.castShadow = true; scene.add(m); offcuts.push(m);
+}
+
+/* Post: bloom for signal light, then grain and vignette */
+const msaa = new THREE.WebGLRenderTarget(W, H, { samples: 4, type: THREE.HalfFloatType });
+const composer = new EffectComposer(renderer, msaa);
+composer.setPixelRatio(1); composer.setSize(W, H);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 0.32, 0.3, 0.92); composer.addPass(bloom);
+composer.addPass(new OutputPass());
+const grain = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uSeed: { value: 0 }, uAspect: { value: W / H } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uSeed; uniform float uAspect; varying vec2 vUv;
+    float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)) + uSeed) * 43758.5453); }
+    void main(){ vec4 c = texture2D(tDiffuse, vUv);
+      vec2 q = vUv - 0.5; q.x *= uAspect; float v = smoothstep(1.15, 0.25, length(q));
+      c.rgb *= mix(0.62, 1.0, v);
+      c.rgb += (h(vUv * 1000.0) - 0.5) * 0.028;
+      gl_FragColor = c; }`
+});
+composer.addPass(grain);
+
+/* Timeline helpers */
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const ease = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+const sine = (t) => -(Math.cos(Math.PI * t) - 1) / 2;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const lerp = (a, b, t) => a + (b - a) * t;
+const D2R = Math.PI / 180;
+// composed exploded view: aligned, separated, gently rotated
+const EX = [
+  { dy: 0.30, dx: 0.20, dz: -0.15, ry: -16, rx: 2, rz: -2 },
+  { dy: 1.05, dx: -0.18, dz: 0.12, ry: -7, rx: -2, rz: 2 },
+  { dy: 1.80, dx: 0.16, dz: -0.08, ry: 6, rx: 2, rz: -1.5 },
+  { dy: 2.55, dx: -0.12, dz: 0.16, ry: 15, rx: -2.5, rz: 2 },
+];
+const WIN = [[0.00, 0.42], [0.08, 0.52], [0.16, 0.62], [0.24, 0.72]];
+
+function pose(t, mode) {
+  LAYERS.forEach((l, i) => {
+    const k = ease(seg(t, WIN[i][0], WIN[i][1]));
+    const e = EX[i], u = 1 - k;
+    l.position.set(e.dx * u, REST[i] + e.dy * u, e.dz * u);
+    l.rotation.set(e.rx * D2R * u, e.ry * D2R * u, e.rz * D2R * u);
+    // a slow breathing drift while apart, fading out as it seats
+    l.position.y += Math.sin(t * 9 + i * 1.3) * 0.025 * u;
+  });
+  const pk = easeOut(seg(t, 0.04, 0.30));
+  posts.forEach((p) => { p.scale.y = Math.max(0.001, pk); p.position.y = (STACK_H * pk) / 2; p.visible = pk > 0.01; });
+  // fasteners ride with the top plate
+  fasteners.forEach((f) => {
+    const top = LAYERS[3];
+    f.position.set(f.userData.rest.x + top.position.x, f.userData.rest.y + (top.position.y - REST[3]), f.userData.rest.z + top.position.z);
+    f.rotation.set(top.rotation.x, top.rotation.y + Math.PI / 6, top.rotation.z);
+  });
+  signalLines.forEach((mat, i) => { mat.opacity = easeOut(seg(t, WIN[i + 1][1] - 0.035, WIN[i + 1][1] + 0.025)); });
+  dots.inner.forEach((d, i) => { d.material.opacity = easeOut(seg(t, 0.72 + i * 0.012, 0.76 + i * 0.012)); });
+  dots.core.material.opacity = easeOut(seg(t, 0.82, 0.87));
+  if (L2.userData.redBar) L2.userData.redBar.material.opacity = easeOut(seg(t, 0.60, 0.66));
+  redGlow.intensity = 0.5 * easeOut(seg(t, 0.84, 0.95));
+  redGlow.position.y = STACK_H + 0.5;
+  // a soft light sweep travels across the finished unit
+  const sw = seg(t, 0.74, 1.0);
+  sweep.intensity = 5 * Math.sin(Math.PI * sw);
+  sweep.position.set(lerp(-3.5, 3.5, sw), STACK_H + 2.2, lerp(2.5, -1.5, sw));
+  sweep.lookAt(0, STACK_H, 0);
+
+  let az, el, dist, tx, ty;
+  if (mode === 'film') {
+    const c = sine(t);
+    az = lerp(-30, 56, c);
+    el = lerp(17, 31, c);
+    // frame the stack's real height so nothing leaves the frame while it closes
+    const topY = LAYERS[3].position.y + 0.12, span = topY;
+    dist = 6.4 + span * 0.98 + 0.4 * sine(seg(t, 0.82, 1));
+    tx = lerp(-1.7, -1.4, c);
+    ty = span * 0.47 + 0.02;
+  } else { az = mode.az; el = mode.el; dist = mode.dist; tx = mode.tx; ty = mode.ty; }
+  const A = az * D2R, E = el * D2R;
+  const camPos = new THREE.Vector3(Math.sin(A) * Math.cos(E) * dist, Math.sin(E) * dist + 0.6, Math.cos(A) * Math.cos(E) * dist);
+  const right = new THREE.Vector3(Math.cos(A), 0, -Math.sin(A));
+  const look = new THREE.Vector3(0, ty, 0).addScaledVector(right, tx);
+  camera.position.copy(camPos).addScaledVector(right, tx);
+  camera.lookAt(look);
+  grain.uniforms.uSeed.value = t * 97.0;
+}
+
+window.renderAt = (t, mode = 'film', opts = {}) => {
+  // optional isolation for stills
+  LAYERS.forEach((l, i) => { l.visible = !opts.only || opts.only.includes(i); });
+  signalLines.forEach((m, i) => { if (opts.only) m.visible = opts.only.includes(i) && opts.only.includes(i + 1); });
+  posts.forEach((p) => { if (opts.noPosts) p.visible = false; });
+  pose(t, mode);
+  if (opts.noPosts) posts.forEach((p) => p.visible = false);
+  if (opts.noFasteners) fasteners.forEach((f) => f.visible = false); else fasteners.forEach((f) => f.visible = true);
+  if (opts.noOffcuts) offcuts.forEach((m) => m.visible = false);
+  if (opts.lift) LAYERS.forEach((l, i) => { l.position.y = REST[i] + i * opts.lift; });
+  if (opts.lift) signalLines.forEach((m) => m.visible = false);
+  if (opts.noGlow) redGlow.intensity = 0;
+  composer.render();
+  return renderer.domElement.toDataURL('image/png');
+};
+window.boxAt = (t) => {
+  pose(t, 'film');
+  unit.updateMatrixWorld(true); camera.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  LAYERS.forEach((l) => box.expandByObject(l));
+  const pts = [];
+  for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) pts.push(new THREE.Vector3(x, y, z));
+  let x0 = 1, x1 = 0, y0 = 1, y1 = 0;
+  pts.forEach((v) => { v.project(camera); const sx = (v.x + 1) / 2, sy = (1 - v.y) / 2; x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy); });
+  return [x0, y0, x1, y1].map((v) => Math.round(v * 10000) / 10000);
+};
+window.ready = true;
+</script>
+</body></html>

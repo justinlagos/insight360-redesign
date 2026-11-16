@@ -1,0 +1,10 @@
+import { chromium } from '/opt/npm-tools/node_modules/playwright/index.mjs';
+import fs from 'fs';
+const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const p = await b.newPage({ viewport: { width: 1920, height: 1080 } });
+await p.goto('http://127.0.0.1:8765/scene2.html?w=1920&h=1080');
+await p.waitForFunction('window.ready === true', null, { timeout: 90000 });
+const out = await p.evaluate(() => { const r = []; for (let i = 0; i < 200; i++) r.push(window.boxAt(i / 199)); return r; });
+fs.writeFileSync('/home/claude/film/boxes.json', JSON.stringify(out));
+console.log(out[0], out[100], out[199]);
+await b.close();
